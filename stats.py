@@ -14,7 +14,7 @@ def wishart_log_likelihood(S, Sigma, d):
 
 def crp(c_new, c_old, ksi):
     '''
-    Probability desnity for the Chinese Restaurant Process
+    Probability density for the Chinese Restaurant Process
     :param c_new: int, new label
     :param c_old: array, old labels
     :param ksi: control parameter for the introduction of new clusters
