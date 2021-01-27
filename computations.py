@@ -36,37 +36,7 @@ def top95_eigenvalues(S):
         sum += eigenvalues[d - 1]
     return d
 
-def compute_srvf(curve):
-    ''' Compute SRVF of curve. 2D curve must be of shape 2xT '''
-    T = curve.shape[1]
-    gradient = np.gradient(curve, axis=1)
-    velocity = np.transpose(gradient)
-    velocity_norm = np.linalg.norm(velocity, axis=1)
-    velocity_norm = np.transpose(np.vstack([velocity_norm] * 2))
-
-    q = []
-    for t in range(T):
-        if velocity_norm[t, 0] > 0:
-            q_t = velocity[t] / np.sqrt(velocity_norm[t])
-        else:
-            q_t = 0
-        q.append(q_t)
-
-    return np.array(q)
-
 
 if __name__ == '__main__':
-    p = np.array([0.4, 0.3, 0.3])
-    mu = [np.array([0, 0]), np.array([15, 2]), np.array([-13, -12])]
-    sigma = [np.eye(2)] * 3
-
-    n_samples = 30
-    gmm = generate_data.GMM(p, mu, sigma)
-    samples, labels = gmm.sample(n_samples)
-    samples = samples[labels.argsort()]  # Group samples by cluster
-
-    D = distance_matrix(samples)
-    sigma_sq = D.max() / 2
-    S = similarity_matrix(samples, sigma_sq)
 
     end=True
