@@ -43,7 +43,7 @@ def membership_B2c_ordered(B):
 
 def membership_B2c(B):
     '''
-    Convert a (ordered) membership matrix to an array of membership vectors
+    Convert a (unordered) membership matrix to an array of membership vectors
     :param c: nx1 array-like
     :return: B, nxn membership matrix
     '''
