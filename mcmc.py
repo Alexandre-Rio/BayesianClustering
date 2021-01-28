@@ -5,6 +5,7 @@ from utils import *
 from stats import crp
 from generate_data import GMM, toy_example
 from computations import *
+import tqdm
 
 class BayesianClustering:
     def __init__(self, S, **kwargs):
@@ -168,23 +169,27 @@ class BayesianClustering:
         B_star_list = []
         while k != mode and iter >= 0:
             print(iter)
-            J = np.arange(1, self.n + 1)
+            B_mean_copy = B_mean.copy()
+            J = np.arange(self.n)
             B_star = np.zeros((self.n, self.n))
             iter -= 1
             t_star = iter / M
 
+            J_copy = J.copy()
             for j in J:
-                v = (B_mean[j - 1, :] > t_star)
+                if j not in J_copy:
+                    pass
+                v = (B_mean_copy[j, :] > t_star)
                 C = np.where(v == 1)[0]
-                J = np.setdiff1d(J, C + 1)
+                J_copy = np.setdiff1d(J_copy, C)
 
                 for i in C:
-                    B_star[i, :], B_star[:, i] = v, v
-                    B_mean[i, :], B_mean[:, i] = np.zeros(self.n), np.zeros(self.n)
+                    B_star[i, :], B_star[:, i] = v.copy(), v.copy()
+                    B_mean_copy[i, :], B_mean_copy[:, i] = np.zeros(self.n), np.zeros(self.n)
 
-            c = membership_B2c(B_star)
+            c = membership_B2c(B_star.copy())
             k = len(np.unique(c))
-            B_star_list.append(B_star)
+            B_star_list.append(B_star.copy())
 
         return B_star_list[-1]
 
@@ -202,17 +207,17 @@ if __name__ == '__main__':
     params = {'d': d_eb,
               'r0': 2 * r / d_eb,
               's0': 2 * s / d_eb,
-              'theta': np.array([1000, 2000, 3000, 4000, 5000]),
-              'ksi': 10,
+              'theta': np.array([1000, 2000, 3000, 4000, 5000]) / 10000,
+              'ksi': 0.2,
               'K_init': 6
               }
 
     # Define and run Bayesian Clustering algorithm
     self = BayesianClustering(S, **params)
-    B_samples, nb_clusters = self.mcmc_sampler(5000, 0)
-    # np.save('outputs/B_samples3.npy', np.array(B_samples))
-    #B_samples = np.load('outputs/B_samples3.npy')
-    #B_samples = B_samples[1000:]
+    # B_samples, nb_clusters = self.mcmc_sampler(5000, 0)
+    # np.save('outputs/B_samples5.npy', np.array(B_samples))
+    B_samples = np.load('outputs/B_samples5.npy')
+    B_star = self.extrinsic_mean(B_samples)
 
     c_samples = [membership_B2c(B) for B in B_samples]
     nb_clusters = [len(np.unique(c_samples[i])) for i in range(len(c_samples))]
