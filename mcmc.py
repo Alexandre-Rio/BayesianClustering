@@ -117,21 +117,26 @@ class BayesianClustering:
 
             for k in range(self.K):
                 c_likelihood[k] = likelihood_theta[k] * self.cn[k] / (self.n - 1 - self.ksi)
-            c_likelihood[self.K] = likelihood_theta[self.K] * self.cn[self.K] / (self.n - 1 - self.ksi)
+            c_likelihood[self.K] = likelihood_theta[self.K] * self.ksi / (self.n - 1 - self.ksi)
 
             c_likelihood /= np.sum(c_likelihood)
 
-            self.c[i] = self.sample(np.arange(self.K + 1), c_likelihood)
+            self.c[i] = self.sample(np.arange(self.K + 1), c_likelihood)[0]
             if self.c[i] == self.K:
                 self.K += 1
                 self.cn[-1] = 1
             else:
                 self.cn[self.c[i]] += 1
 
+        B = membership_c2B(self.c)
+
+        return B
+
     def mcmc_sampler(self, iter, burn_in=100):
         ''' MCMC posterior sampling algorithm; Generate a sequence of membership matrices'''
         # Initialization
         self.c = np.random.randint(self.K, size=self.n)
+        self.cn = np.zeros(self.K)
         for i in range(self.K):
             self.cn[i] = np.sum(self.c == i)
 
@@ -203,7 +208,7 @@ if __name__ == '__main__':
 
     # Define and run Bayesian Clustering algorithm
     self = BayesianClustering(S, **params)
-    B_samples = self.mcmc_sampler(4000, 1000)
+    B_samples = self.mcmc_sampler(20, 10)
     np.save('outputs/B_samples3.npy', np.array(B_samples))
     #B_samples = np.load('outputs/B_samples3.npy')
     #B_samples = B_samples[1000:]
