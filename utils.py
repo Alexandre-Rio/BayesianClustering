@@ -59,7 +59,7 @@ def membership_B2c(B):
         indices_to_check = np.setdiff1d(indices_to_check, idx_in_cluster)
 
     for cluster, idx_in_cluster in enumerate(clusters):
-        c[idx_in_cluster] = cluster + 1
+        c[idx_in_cluster] = cluster
 
     return c
 
