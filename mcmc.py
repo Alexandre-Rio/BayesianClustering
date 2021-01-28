@@ -5,6 +5,7 @@ from utils import *
 from stats import crp
 from generate_data import GMM, toy_example
 from computations import *
+import tqdm
 
 class BayesianClustering:
     def __init__(self, S, **kwargs):
@@ -19,101 +20,136 @@ class BayesianClustering:
 
         self.n = S.shape[0]
         self.c = None  # Cluster indices
+        self.cn = None  # Cluster sizes
+        self.B = None
         self.B_samples = []  # Membership matrices generated
+        self.nb_clusters = []
 
-    def posterior_theta(self, theta):
-        ''' Compute the posteriors of the theta's. For computational stability, the log-likelihood is first computed '''
-        n_js = np.unique(self.c, return_counts=True)[1]
+        self.counter = 0
 
-        sum_term = 0
-        log_prod_term = 0  # Product in the likelihood formula, which is a sum
-        for j in range(1, self.K + 1):
-            log_prod_term += np.log(1 + theta * n_js[j - 1])
-            I_j = (self.c == j)
-            S_jj = np.vdot(I_j, np.dot(self.S, I_j))
-            sum_term += (theta * S_jj) / (1 + n_js[j - 1] * theta)
-        log_prod_term *= - 0.5 * self.d
+    def posterior_theta(self, theta, c, cn):
+        '''
+        Compute the posteriors of the theta's. For computational stability, the log-likelihood is first computed
+        c: Cluster indices
+        cn: Cluster sizes
+        K: Number of clusters
+        '''
+        log_prod = 0
+        sum = 0
 
-        exponent = - 0.5 * self.d * (self.n + self.r0)
-        log_likelihood = log_prod_term + exponent * \
-                         (np.log(0.5 * self.d) + np.log(np.trace(self.S) - sum_term + self.s0))
+        for j in range(len(cn)):
+            log_prod += np.log(1 + theta * cn[j])
+            Ij = (c == j)
+            sum += (theta / (1 + cn[j] * theta)) * np.vdot(Ij, np.dot(self.S, Ij))
 
-        return np.exp(log_likelihood) / self.N_theta
+        log_lk = - 0.5 * self.d * (log_prod + (self.n + self.r0) *
+                                   (np.log(0.5 * self.d) + np.log(np.trace(self.S) - sum + self.s0)))
 
-    def B_cond_ksi(self, c):
-        ''' Compute the posterior of B conditional on ksi '''
-        likelihood = self.ksi / (self.n - 1 + self.ksi)
-        for i in range(1, self.n):
-            c_curr = c[i]
-            c_old = c[0: i]
-            likelihood *= crp(c_curr, c_old, self.ksi)
-        return likelihood
+        return log_lk
 
-    def posterior_B(self, c, posterior_theta):
-        ''' Compute the posterior of B conditional on S, theta, d and ksi '''
-        B_cond_ksi = self.B_cond_ksi(c)
-        return posterior_theta * B_cond_ksi / self.N_theta
+    def sample(self, values, p):
+        '''
+        Sample from values with probability p, while handling NaNs
+        :param values: vector of values to sample from
+        :param p: probabilities associated to values
+        :return: a sample together with its index in the list
+        '''
+        count_nan = np.count_nonzero(np.isnan(p))  # Account for nan values
+        if count_nan == 0:
+            sample = np.random.choice(values, p=p)
+            index = np.where(values == sample)[0][0]
+        elif count_nan < len(values):
+            mask = np.isnan(p)
+            temp_values = values[~mask]
+            p = p[~mask]
+            p /= p.sum()
+            sample = np.random.choice(temp_values, p=p)
+            index = np.where(temp_values == sample)[0][0]
+        else:
+            sample = np.random.choice(values)
+            index = np.where(values == sample)[0][0]
+
+        return sample, index
 
     def mcmc_sweep(self):
         ''' One sweep of the MCMC algorithm '''
         # Step 1: Sample theta
-        posteriors_theta = np.array([self.posterior_theta(self.theta[i]) for i in range(self.N_theta)])
-        norm_posteriors_theta = posteriors_theta / posteriors_theta.sum()  # Normalize probabilities
-        count_nan = np.count_nonzero(np.isnan(norm_posteriors_theta))  # Account for nan values
-        if count_nan == 0:
-            theta = np.random.choice(self.theta, p=norm_posteriors_theta)
-        elif count_nan < len(self.theta):
-            mask = np.isnan(norm_posteriors_theta)
-            theta_temp = self.theta[~mask]
-            norm_posteriors_theta = norm_posteriors_theta[~mask]
-            norm_posteriors_theta /= norm_posteriors_theta.sum()
-            theta = np.random.choice(theta_temp, p=norm_posteriors_theta)
-        else:
-            theta = np.random.choice(self.theta)
+        log_likelihood_theta = np.zeros(self.N_theta)
+        for i in range(self.N_theta):
+            theta = self.theta[i]
+            assert self.cn.sum() == self.n
+            log_lk = self.posterior_theta(theta, self.c, self.cn)
+            log_likelihood_theta[i] = log_lk
 
-        index_theta = np.where(self.theta == theta)[0][0]
-        if not np.isnan(posteriors_theta[index_theta]):
-            posterior_theta = posteriors_theta[index_theta]  # Posterior value used to compute the posterior of B
-        else:
-            posterior_theta = 1
+        log_likelihood = log_likelihood_theta - np.max(log_likelihood_theta)
+        likelihood_theta = np.exp(log_likelihood)
+        likelihood_theta /= np.sum(likelihood_theta)  # Normalize likelihood
+
+        theta, index_theta = self.sample(self.theta, likelihood_theta)
+        print(log_likelihood)
 
         # Step 2: Update membership vector
-        for i in range(self.n):  # Iterate through observations
-            pi = np.zeros(self.K + 1)
-            for j in range(1, self.K + 2):  # Iterate though clusters + new cluster
-                c_new = self.c.copy()
-                c_new[i] = j
-                pi[j - 1] = self.posterior_B(c_new, posterior_theta)
-            norm_pi = pi / pi.sum()
-            self.c[i] = np.random.choice(np.arange(1, self.K + 2), p=norm_pi)  # Update c_i
-        self.K = len(np.unique(self.c))  # Update number of clusters
+        for i in range(self.n):
+            c_likelihood = np.zeros(self.K + 1)
+            log_likelihood_theta = np.zeros(self.K + 1)
 
-        # Step 3: Obtain new membership matrix
-        B = membership_c2B(self.c)
+            # Test different clustering configurations for data i
+            for k in range(self.K):
+                c_temp = self.c.copy()
+                c_temp[i] = k
+                cn_temp = np.unique(c_temp, return_counts=True)[1]
 
-        return B
+                assert cn_temp.sum() == self.n
+                log_lk = self.posterior_theta(theta, c_temp, cn_temp)
+                log_likelihood_theta[k] = log_lk
 
+            # Test apparition of a new cluster
+            c_temp = self.c.copy()
+            c_temp[i] = self.K
+            cn_temp = np.unique(c_temp, return_counts=True)[1]
+
+            assert cn_temp.sum() == self.n
+            log_lk = self.posterior_theta(theta, c_temp, cn_temp)
+            log_likelihood_theta[self.K] = log_lk
+
+            log_likelihood_theta -= np.max(log_likelihood_theta)
+            likelihood_theta = np.exp(log_likelihood_theta)
+            likelihood_theta /= np.sum(likelihood_theta)
+
+            for k in range(self.K):
+                c_likelihood[k] = likelihood_theta[k] * self.cn[k] / (self.n - 1 - self.ksi)
+            c_likelihood[self.K] = likelihood_theta[self.K] * self.ksi / (self.n - 1 - self.ksi)
+
+            c_likelihood /= np.sum(c_likelihood)
+
+            self.c[i] = self.sample(np.arange(self.K + 1), c_likelihood)[0]
+
+        self.B = membership_c2B(self.c)
+        self.c = membership_B2c(self.B)
+        counter = np.unique(self.c, return_counts=True)
+        self.K = len(counter[0])
+        self.cn = counter[1]
+
+        return self.B
 
     def mcmc_sampler(self, iter, burn_in=100):
         ''' MCMC posterior sampling algorithm; Generate a sequence of membership matrices'''
         # Initialization
-        self.c = np.random.randint(1, self.K + 1, size=self.n)
-        # self.c.sort()
-        B = membership_c2B(self.c)
-        self.B_samples.append(B)
+        self.c = np.random.randint(self.K, size=self.n)
+        self.cn = np.zeros(self.K)
+        self.nb_clusters.append(self.K)
+        for i in range(self.K):
+            self.cn[i] = np.sum(self.c == i)
 
         # Iterations
-        for it in range(1, iter):
-            print(it)
+        for it in range(iter):
+            print('{}: {}'.format(it, self.K))
             B = self.mcmc_sweep()
-            self.B_samples.append(B)
+            if it > burn_in:
+                self.B_samples.append(B)
+                self.nb_clusters.append(self.K)
 
-        if len(self.B_samples) > burn_in:
-            B_samples = self.B_samples[burn_in:]
-        else:
-            B_samples = None
-
-        return B_samples
+        return self.B_samples, self.nb_clusters
 
     def extrinsic_mean(self, B_samples):
         ''' Compute extrinsic mean of the sequence of membership matrices generated by MCMC'''
@@ -133,23 +169,27 @@ class BayesianClustering:
         B_star_list = []
         while k != mode and iter >= 0:
             print(iter)
-            J = np.arange(1, self.n + 1)
+            B_mean_copy = B_mean.copy()
+            J = np.arange(self.n)
             B_star = np.zeros((self.n, self.n))
             iter -= 1
             t_star = iter / M
 
+            J_copy = J.copy()
             for j in J:
-                v = (B_mean[j - 1, :] > t_star)
+                if j not in J_copy:
+                    pass
+                v = (B_mean_copy[j, :] > t_star)
                 C = np.where(v == 1)[0]
-                J = np.setdiff1d(J, C + 1)
+                J_copy = np.setdiff1d(J_copy, C)
 
                 for i in C:
-                    B_star[i, :], B_star[:, i] = v, v
-                    B_mean[i, :], B_mean[:, i] = np.zeros(self.n), np.zeros(self.n)
+                    B_star[i, :], B_star[:, i] = v.copy(), v.copy()
+                    B_mean_copy[i, :], B_mean_copy[:, i] = np.zeros(self.n), np.zeros(self.n)
 
-            c = membership_B2c(B_star)
+            c = membership_B2c(B_star.copy())
             k = len(np.unique(c))
-            B_star_list.append(B_star)
+            B_star_list.append(B_star.copy())
 
         return B_star_list[-1]
 
@@ -157,7 +197,7 @@ class BayesianClustering:
 if __name__ == '__main__':
 
     # Compute metric and estimate hyperpriors2
-    S = toy_example() # Use toy example
+    S = toy_example()  # Use toy example
     # S = np.load('data/S_tmp_40.npy')  # Use similarity matrix from Git
     d_eb = top95_eigenvalues(S)
     r = 3
@@ -167,17 +207,17 @@ if __name__ == '__main__':
     params = {'d': d_eb,
               'r0': 2 * r / d_eb,
               's0': 2 * s / d_eb,
-              'theta': np.array([1000, 2000, 3000, 4000, 5000]),
-              'ksi': 1,
-              'K_init': 10
+              'theta': np.array([1000, 2000, 3000, 4000, 5000]) / 10000,
+              'ksi': 0.2,
+              'K_init': 6
               }
 
     # Define and run Bayesian Clustering algorithm
     self = BayesianClustering(S, **params)
-    B_samples = self.mcmc_sampler(4000, 1000)
-    np.save('outputs/B_samples3.npy', np.array(B_samples))
-    #B_samples = np.load('outputs/B_samples3.npy')
-    #B_samples = B_samples[1000:]
+    # B_samples, nb_clusters = self.mcmc_sampler(5000, 0)
+    # np.save('outputs/B_samples5.npy', np.array(B_samples))
+    B_samples = np.load('outputs/B_samples5.npy')
+    B_star = self.extrinsic_mean(B_samples)
 
     c_samples = [membership_B2c(B) for B in B_samples]
     nb_clusters = [len(np.unique(c_samples[i])) for i in range(len(c_samples))]
