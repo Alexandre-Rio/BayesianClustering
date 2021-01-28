@@ -50,7 +50,7 @@ def membership_B2c(B):
     n = B.shape[0]
     indices_to_check = np.arange(n)
     clusters = []
-    c = np.zeros(n)
+    c = np.zeros(n, dtype=int)
 
     while len(indices_to_check) > 0:
         idx = indices_to_check[0]

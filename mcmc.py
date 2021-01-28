@@ -20,6 +20,7 @@ class BayesianClustering:
         self.n = S.shape[0]
         self.c = None  # Cluster indices
         self.cn = None  # Cluster sizes
+        self.B = None
         self.B_samples = []  # Membership matrices generated
         self.nb_clusters = []
 
@@ -87,13 +88,6 @@ class BayesianClustering:
         # Step 2: Update membership vector
         for i in range(self.n):
             self.cn[self.c[i]] -= 1
-            # Remove empty clusters
-            if self.cn[self.c[i]] == 0:
-                self.counter += 1
-                old_idx = self.c[i]
-                self.cn[old_idx] = self.cn[-1]
-                self.c[self.c == self.K - 1] = old_idx
-                self.K = self.K - 1
             c_likelihood = np.zeros(self.K + 1)
             log_likelihood_theta = np.zeros(self.K + 1)
 
@@ -126,11 +120,12 @@ class BayesianClustering:
             c_likelihood /= np.sum(c_likelihood)
 
             self.c[i] = self.sample(np.arange(self.K + 1), c_likelihood)[0]
-            if self.c[i] == self.K:
-                self.K += 1
-                self.cn[-1] = 1
-            else:
-                self.cn[self.c[i]] += 1
+
+        self.B = membership_c2B(self.c)
+        self.c = membership_B2c(self.B)
+        counter = np.unique(self.c, return_counts=True)
+        self.K = len(counter[0])
+        self.cn = counter[1]
 
         B = membership_c2B(self.c)
 
@@ -147,7 +142,7 @@ class BayesianClustering:
 
         # Iterations
         for it in range(iter):
-            print(it)
+            print('{}: {}'.format(it, self.K))
             B = self.mcmc_sweep()
             if it > burn_in:
                 self.B_samples.append(B)
@@ -207,15 +202,15 @@ if __name__ == '__main__':
     params = {'d': d_eb,
               'r0': 2 * r / d_eb,
               's0': 2 * s / d_eb,
-              'theta': np.array([1000, 2000, 3000, 4000, 5000]) / 10000,
+              'theta': np.array([1000, 2000, 3000, 4000, 5000]),
               'ksi': 10,
-              'K_init': 30
+              'K_init': 20
               }
 
     # Define and run Bayesian Clustering algorithm
     self = BayesianClustering(S, **params)
-    B_samples, nb_clusters = self.mcmc_sampler(500, 0)
-    np.save('outputs/B_samples2.npy', np.array(B_samples))
+    B_samples, nb_clusters = self.mcmc_sampler(5000, 0)
+    np.save('outputs/B_samples.npy', np.array(B_samples))
     #B_samples = np.load('outputs/B_samples3.npy')
     #B_samples = B_samples[1000:]
 

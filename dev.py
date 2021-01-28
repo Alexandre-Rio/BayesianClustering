@@ -199,7 +199,7 @@ if __name__ == '__main__':
     s0 = 2 * 4 / d
     theta_vect = np.array([1000, 2000, 3000, 4000, 5000]) / 10000
     ksi = 1
-    M = 10
+    M = 1
 
     final_B, final_rd = WishartCluster(d, theta_vect, r0, s0, ksi, M, S, iter=5000)
 
