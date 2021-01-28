@@ -6,12 +6,42 @@ from stats import crp
 from generate_data import GMM, toy_example
 from computations import *
 
-def calculate_B(c, N):
-    B = np.zeros((N, N))
-    for row in range(N):
-        for col in range(N):
-            if c[row] == c[col]:
-                B[row, col] = 1
+def membership_B2c(B):
+    '''
+    Convert a (unordered) membership matrix to an array of membership vectors
+    :param c: nx1 array-like
+    :return: B, nxn membership matrix
+    '''
+    n = B.shape[0]
+    indices_to_check = np.arange(n)
+    clusters = []
+    c = np.zeros(n, dtype=int)
+
+    while len(indices_to_check) > 0:
+        idx = indices_to_check[0]
+        idx_in_cluster = np.where(B[idx, :] == 1)[0]
+        clusters.append(idx_in_cluster)
+        indices_to_check = np.setdiff1d(indices_to_check, idx_in_cluster)
+
+    for cluster, idx_in_cluster in enumerate(clusters):
+        c[idx_in_cluster] = cluster
+
+    return c
+
+def membership_c2B(c):
+    '''
+    Convert an array of membership vectors to a membership matrix
+    :param c: nx1 array-like
+    :return: B, nxn membership matrix
+    '''
+    n = len(c)
+    B = np.eye(n)
+    # c_sorted = c.copy()
+    # c_sorted.sort()
+    for i in range(n):
+        for j in range(i+1, n):
+            if c[i] == c[j]:
+                B[i, j] = B[j, i] = 1
     return B
 
 def sample(values, p):
@@ -111,14 +141,7 @@ def WishartCluster(d, theta_vect, r0, s0, ksi, M, S, iter=2000):
 
             # On va tester les différentes configurations de clustering pour la donnée j
 
-            cn[int(c[j] - 1)] -= 1 # Update distribution
-            # Remove cluster associated with none elements
-            if cn[int(c[j] - 1)] == 0:
-                oldind = int(c[j] - 1)
-                # Move last one to the removed space
-                cn[oldind] = cn[int(M - 1)]
-                c[c == (M - 1)] = oldind
-                M = max(M - 1, 0)
+            cn[int(c[j] - 1)] -= 1  # Update distribution
             catp = np.zeros(M + 1)
             log_p = np.zeros(M + 1)
 
@@ -170,12 +193,12 @@ def WishartCluster(d, theta_vect, r0, s0, ksi, M, S, iter=2000):
             catp /= np.sum(catp)  # Etape de renormalisation qui n'est pas dans le code initial => A surveiller
 
             c[j] = sample(np.arange(len(catp)), p=catp)[0]
-            # If cj falls in the new category
-            if c[j] > M:
-                M = M + 1
-                cn[int(M - 1)] = 1
-            else:
-                cn[int(c[j])] += cn[int(c[j])]
+
+        B = membership_B2c(c)
+        c = membership_c2B(B)
+        counter = np.unique(c, return_counts=True)
+        M = len(counter[0])
+        cn = counter[1]
 
         record.append(M)
         if dispmcmc:
@@ -184,7 +207,7 @@ def WishartCluster(d, theta_vect, r0, s0, ksi, M, S, iter=2000):
         pp += 1
 
         if iter < 2000:
-            tmp_B = calculate_B(c, N)
+            tmp_B = membership_c2B(c)
             final_B = final_B + tmp_B
             final_rd.append(M)
 
@@ -198,7 +221,7 @@ if __name__ == '__main__':
     r0 = 2 * 3 / d
     s0 = 2 * 4 / d
     theta_vect = np.array([1000, 2000, 3000, 4000, 5000]) / 10000
-    ksi = 1
+    ksi = 0.2
     M = 1
 
     final_B, final_rd = WishartCluster(d, theta_vect, r0, s0, ksi, M, S, iter=5000)

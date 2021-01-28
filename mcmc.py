@@ -76,6 +76,7 @@ class BayesianClustering:
         log_likelihood_theta = np.zeros(self.N_theta)
         for i in range(self.N_theta):
             theta = self.theta[i]
+            assert self.cn.sum() == self.n
             log_lk = self.posterior_theta(theta, self.c, self.cn)
             log_likelihood_theta[i] = log_lk
 
@@ -84,10 +85,10 @@ class BayesianClustering:
         likelihood_theta /= np.sum(likelihood_theta)  # Normalize likelihood
 
         theta, index_theta = self.sample(self.theta, likelihood_theta)
+        print(log_likelihood)
 
         # Step 2: Update membership vector
         for i in range(self.n):
-            self.cn[self.c[i]] -= 1
             c_likelihood = np.zeros(self.K + 1)
             log_likelihood_theta = np.zeros(self.K + 1)
 
@@ -95,17 +96,18 @@ class BayesianClustering:
             for k in range(self.K):
                 c_temp = self.c.copy()
                 c_temp[i] = k
-                cn_temp = self.cn.copy()
-                cn_temp[k] += 1
+                cn_temp = np.unique(c_temp, return_counts=True)[1]
 
+                assert cn_temp.sum() == self.n
                 log_lk = self.posterior_theta(theta, c_temp, cn_temp)
                 log_likelihood_theta[k] = log_lk
 
             # Test apparition of a new cluster
             c_temp = self.c.copy()
             c_temp[i] = self.K
-            cn_temp = np.concatenate([self.cn.copy(), [1]])
+            cn_temp = np.unique(c_temp, return_counts=True)[1]
 
+            assert cn_temp.sum() == self.n
             log_lk = self.posterior_theta(theta, c_temp, cn_temp)
             log_likelihood_theta[self.K] = log_lk
 
@@ -127,9 +129,7 @@ class BayesianClustering:
         self.K = len(counter[0])
         self.cn = counter[1]
 
-        B = membership_c2B(self.c)
-
-        return B
+        return self.B
 
     def mcmc_sampler(self, iter, burn_in=100):
         ''' MCMC posterior sampling algorithm; Generate a sequence of membership matrices'''
@@ -192,7 +192,7 @@ class BayesianClustering:
 if __name__ == '__main__':
 
     # Compute metric and estimate hyperpriors2
-    S = toy_example() # Use toy example
+    S = toy_example()  # Use toy example
     # S = np.load('data/S_tmp_40.npy')  # Use similarity matrix from Git
     d_eb = top95_eigenvalues(S)
     r = 3
@@ -204,13 +204,13 @@ if __name__ == '__main__':
               's0': 2 * s / d_eb,
               'theta': np.array([1000, 2000, 3000, 4000, 5000]),
               'ksi': 10,
-              'K_init': 20
+              'K_init': 6
               }
 
     # Define and run Bayesian Clustering algorithm
     self = BayesianClustering(S, **params)
     B_samples, nb_clusters = self.mcmc_sampler(5000, 0)
-    np.save('outputs/B_samples.npy', np.array(B_samples))
+    # np.save('outputs/B_samples3.npy', np.array(B_samples))
     #B_samples = np.load('outputs/B_samples3.npy')
     #B_samples = B_samples[1000:]
 

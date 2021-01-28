@@ -26,7 +26,7 @@ def toy_example():
     ''' Returns similarity matrix for a toy example of euclidean data'''
     # Simulate data from GMM
     p = np.array([0.5, 0.5])
-    mu = [np.array([0, 0]), np.array([2, 2])]
+    mu = [np.array([-2, -2]), np.array([2, 2])]
     sigma = [np.eye(2)] * 2
 
     n_samples = 60
