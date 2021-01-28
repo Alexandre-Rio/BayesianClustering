@@ -19,26 +19,38 @@ class BayesianClustering:
 
         self.n = S.shape[0]
         self.c = None  # Cluster indices
+        self.cn = None  # Cluster sizes
         self.B_samples = []  # Membership matrices generated
 
-    def posterior_theta(self, theta):
-        ''' Compute the posteriors of the theta's. For computational stability, the log-likelihood is first computed '''
-        n_js = np.unique(self.c, return_counts=True)[1]
+    def posterior_theta(self, c, cn, K):
+        '''
+        Compute the posteriors of the theta's. For computational stability, the log-likelihood is first computed
+        c: Cluster indices
+        cn: Cluster sizes
+        K: Number of clusters
+        '''
 
-        sum_term = 0
-        log_prod_term = 0  # Product in the likelihood formula, which is a sum
-        for j in range(1, self.K + 1):
-            log_prod_term += np.log(1 + theta * n_js[j - 1])
-            I_j = (self.c == j)
-            S_jj = np.vdot(I_j, np.dot(self.S, I_j))
-            sum_term += (theta * S_jj) / (1 + n_js[j - 1] * theta)
-        log_prod_term *= - 0.5 * self.d
+        log_likelihood = np.zeros(self.N_theta)
 
-        exponent = - 0.5 * self.d * (self.n + self.r0)
-        log_likelihood = log_prod_term + exponent * \
-                         (np.log(0.5 * self.d) + np.log(np.trace(self.S) - sum_term + self.s0))
+        for i in range(self.N_theta):
+            log_prod = 0
+            sum = 0
+            theta = self.theta[i]
 
-        return np.exp(log_likelihood) / self.N_theta
+            for j in range(K):
+                log_prod += np.log(1 + theta * cn[j])
+                Ij = (c == j)
+                sum += (theta / (1 + cn[j] * theta)) * np.vdot(Ij, np.dot(self.S, Ij))
+
+            log_lk = 0.5 * self.d * (- log_prod + (self.n + self.r0) *
+                                     (np.log(0.5 * self.d) + np.log(np.trace(self.S) - sum + self.s0)))
+            log_likelihood[i] = log_lk
+
+        log_likelihood = log_likelihood - np.max(log_likelihood)
+        likelihood = np.exp(log_likelihood)
+        likelihood /= np.sum(likelihood)  # Normalize likelihood
+
+        return likelihood
 
     def B_cond_ksi(self, c):
         ''' Compute the posterior of B conditional on ksi '''
@@ -54,24 +66,39 @@ class BayesianClustering:
         B_cond_ksi = self.B_cond_ksi(c)
         return posterior_theta * B_cond_ksi / self.N_theta
 
+    def sample(self, values, p):
+        '''
+        Sample from values with probability p, while handling NaNs
+        :param values: vector of values to sample from
+        :param p: probabilities associated to values
+        :return: a sample together with its index in the list
+        '''
+        count_nan = np.count_nonzero(np.isnan(p))  # Account for nan values
+        if count_nan == 0:
+            sample = np.random.choice(values, p=p)
+            index = np.where(values == sample)[0][0]
+        elif count_nan < len(values):
+            mask = np.isnan(p)
+            temp_values = values[~mask]
+            p = p[~mask]
+            p /= p.sum()
+            sample = np.random.choice(temp_values, p=p)
+            index = np.where(temp_values == sample)[0][0]
+        else:
+            sample = np.random.choice(values)
+            index = np.where(values == sample)[0][0]
+
+        return sample, index
+
     def mcmc_sweep(self):
         ''' One sweep of the MCMC algorithm '''
         # Step 1: Sample theta
-        posteriors_theta = np.array([self.posterior_theta(self.theta[i]) for i in range(self.N_theta)])
-        norm_posteriors_theta = posteriors_theta / posteriors_theta.sum()  # Normalize probabilities
-        count_nan = np.count_nonzero(np.isnan(norm_posteriors_theta))  # Account for nan values
-        if count_nan == 0:
-            theta = np.random.choice(self.theta, p=norm_posteriors_theta)
-        elif count_nan < len(self.theta):
-            mask = np.isnan(norm_posteriors_theta)
-            theta_temp = self.theta[~mask]
-            norm_posteriors_theta = norm_posteriors_theta[~mask]
-            norm_posteriors_theta /= norm_posteriors_theta.sum()
-            theta = np.random.choice(theta_temp, p=norm_posteriors_theta)
-        else:
-            theta = np.random.choice(self.theta)
+        posteriors_theta = self.posterior_theta(self.c, self.cn, self.K)
+        # Handle Nans
+        theta, index_theta = self.sample(self.theta, posteriors_theta)
 
-        index_theta = np.where(self.theta == theta)[0][0]
+        # Restart here !!!
+
         if not np.isnan(posteriors_theta[index_theta]):
             posterior_theta = posteriors_theta[index_theta]  # Posterior value used to compute the posterior of B
         else:
