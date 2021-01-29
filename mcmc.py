@@ -1,11 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from numba import jitclass
+from numba import int32, float64
 
 from utils import *
 from stats import crp
 from generate_data import GMM, toy_example
 from computations import *
 import tqdm
+
 
 class BayesianClustering:
     def __init__(self, S, **kwargs):
@@ -24,8 +27,6 @@ class BayesianClustering:
         self.B = None
         self.B_samples = []  # Membership matrices generated
         self.nb_clusters = []
-
-        self.counter = 0
 
     def posterior_theta(self, theta, c, cn):
         '''
@@ -197,8 +198,13 @@ class BayesianClustering:
 if __name__ == '__main__':
 
     # Compute metric and estimate hyperpriors2
-    S = toy_example()  # Use toy example
+    # S = toy_example()  # Use toy example
     # S = np.load('data/S_tmp_40.npy')  # Use similarity matrix from Git
+    data = np.load('data/sim_data_3.npy')
+    D = distance_matrix(data)
+    sigma_sq = D.max() / 12
+    S = similarity_matrix(data, sigma_sq)
+
     d_eb = top95_eigenvalues(S)
     r = 3
     s = 4
@@ -207,25 +213,42 @@ if __name__ == '__main__':
     params = {'d': d_eb,
               'r0': 2 * r / d_eb,
               's0': 2 * s / d_eb,
-              'theta': np.array([1000, 2000, 3000, 4000, 5000]) / 10000,
-              'ksi': 0.2,
-              'K_init': 6
+              'theta': np.array([1000, 2000, 3000, 4000, 5000]),
+              'ksi': 10,
+              'K_init': 10
               }
 
     # Define and run Bayesian Clustering algorithm
     self = BayesianClustering(S, **params)
-    # B_samples, nb_clusters = self.mcmc_sampler(5000, 0)
-    # np.save('outputs/B_samples5.npy', np.array(B_samples))
-    B_samples = np.load('outputs/B_samples5.npy')
+    B_samples, nb_clusters = self.mcmc_sampler(8000, 1000)
+    #np.save('outputs/conv_3_ksi_small_theta_big.npy', np.array(nb_clusters))
+    np.save('outputs/B_3_ksi_small_theta_big_bis_5c.npy', np.array(B_samples))
     B_star = self.extrinsic_mean(B_samples)
+    np.save('outputs/B_3_star_1_ksi_small_theta_big_bis_5c.npy', B_star)
+
+    #B_samples = np.load('outputs/B_1_ksi_big_theta_small.npy')
+    #B_star = np.load('outputs/B_star_1_ksi_big_theta_small.npy')
 
     c_samples = [membership_B2c(B) for B in B_samples]
     nb_clusters = [len(np.unique(c_samples[i])) for i in range(len(c_samples))]
     count_nb_clusters = np.unique(nb_clusters, return_counts=True)
     mode = count_nb_clusters[0][count_nb_clusters[1].argmax()]
 
+    counts = np.zeros(16)
+    for i in range(len(count_nb_clusters[0])):
+        counts[count_nb_clusters[0][i]] = count_nb_clusters[1][i]
+    counts /= counts.sum()
+
     # Show the distribution of the number of clusters
-    plt.bar(count_nb_clusters[0], count_nb_clusters[1])
+    plt.title('Number of clusters - Estimated distribution')
+    plt.bar(np.arange(len(counts)), counts)
+    plt.xticks(np.arange(len(counts)))
+    plt.xlabel('Number of clusters')
+    plt.ylabel('Proportion')
     plt.show()
+
+    # Show clustering configuration (for Euclidean data)
+    c_star = membership_B2c(B_star)
+    plot_data_with_clusters(data, c_star)
 
     end = True

@@ -1,7 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from numba import jit
 
-__all__ = ['membership_B2c', 'membership_c2B']
+__all__ = ['membership_B2c', 'membership_c2B', 'plot_save_grid', 'plot_data_with_clusters']
 
 def membership_c2B(c):
     '''
@@ -83,7 +84,25 @@ def plot_save_grid(dataset, size=4):
         ax.set_axis_off()
     fig.savefig('images/random_shapes.png')
 
+def plot_data_with_clusters(data, c):
+    ''' Plot euclidean data with estimated labels (memberships c) '''
+    color_dict = {0: 'b', 1: 'g', 2: 'r', 3: 'c', 4: 'm', 5: 'y', 6: 'k', 7: 'w',
+                  8: 'darkcyan', 9: 'darkviolet', 10: 'darkorange', 11: 'dodgerblue'}
+    marker_dict = {0: 'o', 1: 'x', 2: 'v', 3: '^', 4: '*', 5: 's', 6: 'h', 7: '+', 8: 'D', 9: '1', 10: 'p', 11: '8',
+                   12: 'X'}
 
+    scatter_x = data[:, 0]
+    scatter_y = data[:, 1]
+
+    fig, ax = plt.subplots()
+    plt.suptitle("Estimated clustering configuration")
+    for g in np.unique(c):
+        ix = np.where(c == g)
+        ax.scatter(scatter_x[ix], scatter_y[ix], c=color_dict[g], marker=marker_dict[g], label=g, s=100)
+    ax.legend()
+    plt.xlabel('x')
+    plt.ylabel('y')
+    plt.show()
 
 if __name__ == '__main__':
     c = np.array([0, 0, 1, 0, 2, 1, 2, 2])

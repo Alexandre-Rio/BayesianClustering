@@ -41,6 +41,7 @@ def toy_example():
     return S
 
 
+
 if __name__ == '__main__':
     p = np.array([0.4, 0.3, 0.3])
     mu = [np.array([0, 0]), np.array([15, 2]), np.array([-13, -12])]
